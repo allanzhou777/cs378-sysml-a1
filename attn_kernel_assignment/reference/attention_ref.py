@@ -21,8 +21,20 @@ def attention_reference(Q, K, V, causal=False):
     Uses the numerically stable softmax (subtract the row max).
     """
     # BEGIN ASSIGN1_1_1
-    # TODO: softmax(Q K^T / sqrt(d)) V
-    raise NotImplementedError("ASSIGN1_1_1: attention_reference")
+    d = Q.shape[-1]
+    scale = 1.0 / np.sqrt(d)
+    S = np.matmul(Q, np.swapaxes(K, -1, -2)) * scale  # (B, H, N, N)
+
+    if causal:
+        N = S.shape[-1]
+        future = np.triu(np.ones((N, N), dtype=bool), k=1)  # j > i is masked
+        S = np.where(future, -np.inf, S)
+
+    S = S - np.max(S, axis=-1, keepdims=True)
+    P = np.exp(S)
+    P = P / np.sum(P, axis=-1, keepdims=True)
+    O = np.matmul(P, V)
+    return O.astype(Q.dtype)
     # END ASSIGN1_1_1
 
 
@@ -35,9 +47,9 @@ def check_against_reference(kernel_out, Q, K, V, causal=False, dtype="fp32",
     ref = attention_reference(Q, K, V, causal=causal)
     tol = FP16_TOL if dtype == "fp16" else FP32_TOL
     # BEGIN ASSIGN1_1_2
-    # TODO: max-error comparison 
-    max_err = float("nan")
-    ok = False
+    max_err = float(np.max(np.abs(kernel_out.astype(np.float64) -
+                                   ref.astype(np.float64))))
+    ok = max_err <= tol
     # END ASSIGN1_1_2
     tag = f"{label} " if label else ""
     print(f"{tag}causal={int(causal)} dtype={dtype} "
