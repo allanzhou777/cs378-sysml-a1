@@ -72,6 +72,15 @@ __global__ void flash_attn_fw_kernel(const float *Q, const float *K,
       float row_m = -INFINITY;
       // BEGIN ASSIGN1_3_1
       // TODO: your implementation of ASSIGN1_3_1 here
+
+      for (int y = 0; y < Bc; y++) {
+        float sum = 0.0f;
+        for (int x = 0; x < d; x++) sum += Qi[(tx * d) + x] * Kj[(y * d) + x];
+        sum *= softmax_scale;
+        if (causal && (j * Bc + y > i * Br + tx)) sum = -INFINITY;
+        S[(tx * Bc) + y] = sum;
+        row_m = fmaxf(row_m, sum);
+      }
       // END ASSIGN1_3_1
 
       // --- Step 2: unnormalized softmax of this tile ------------------
@@ -80,6 +89,12 @@ __global__ void flash_attn_fw_kernel(const float *Q, const float *K,
       float row_l = 0.0f;
       // BEGIN ASSIGN1_3_2
       // TODO: your implementation of ASSIGN1_3_2 here
+
+      for (int y = 0; y < Bc; y++) {
+        float p = __expf(S[(tx * Bc) + y] - row_m);
+        S[(tx * Bc) + y] = p;
+        row_l += p;
+      }
       // END ASSIGN1_3_2
 
       // --- Step 3: online softmax merge -------------------------------
@@ -91,6 +106,21 @@ __global__ void flash_attn_fw_kernel(const float *Q, const float *K,
       // Then write m_new -> m[...], l_new -> l[...].
       // BEGIN ASSIGN1_3_3
       // TODO: your implementation of ASSIGN1_3_3 here
+
+      float row_m_new = fmaxf(row_m_prev, row_m);
+      float exp_prev = __expf(row_m_prev - row_m_new);
+      float exp_cur = __expf(row_m - row_m_new);
+      float row_l_new = exp_prev * row_l_prev + exp_cur * row_l;
+
+      for (int x = 0; x < d; x++) {
+        float pv = 0.0f;
+        for (int y = 0; y < Bc; y++) pv += S[(tx * Bc) + y] * Vj[(y * d) + x];
+        int o_idx = qkv_offset + (tile_size * i) + (tx * d) + x;
+        O[o_idx] = (row_l_prev * exp_prev * O[o_idx] + exp_cur * pv) / row_l_new;
+      }
+
+      m[lm_offset + (Br * i) + tx] = row_m_new;
+      l[lm_offset + (Br * i) + tx] = row_l_new;
       // END ASSIGN1_3_3
     }
     __syncthreads();
