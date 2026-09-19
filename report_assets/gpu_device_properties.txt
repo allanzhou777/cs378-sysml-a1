@@ -1,0 +1,33 @@
+Tesla T4 (this session's leased node)
+  compute capability: 7.5 (Turing)
+  multiProcessorCount (SMs): 40
+  total device memory: 15.637 GB (15360 MiB nominal)
+  sharedMemPerBlock (default, no opt-in): 49152 bytes (48 KB)
+  sharedMemPerBlockOptin (max, with cudaFuncAttributeMaxDynamicSharedMemorySize): 65536 bytes (64 KB)
+  sharedMemPerMultiprocessor: 65536 bytes (64 KB)   <- Part 4a "shared-memory-per-SM limit"
+  regsPerMultiprocessor: 65536
+  maxThreadsPerMultiProcessor: 1024
+
+Part 4a arithmetic (largest Br=Bc at d=64, fp32, keeping >=2 resident blocks/SM):
+  smem_per_block(B) = (3*B*d + B*B) * 4 bytes, d=64
+  need: 2 * smem_per_block(B) <= sharedMemPerMultiprocessor (65536 bytes)
+  => smem_per_block(B) <= 32768 bytes
+  => 4*(192*B + B^2) <= 32768
+  => B^2 + 192*B - 8192 <= 0
+  => B <= (-192 + sqrt(192^2 + 4*8192)) / 2 = (-192 + sqrt(69632)) / 2 ~= 35.94
+  => largest integer Br=Bc = 35 (in practice, round down to a power of two: 32)
+  check: B=35 -> smem = 4*(192*35+35^2) = 4*(6720+1225) = 4*7945 = 31780 bytes <= 32768  (fits)
+        B=36 -> smem = 4*(192*36+36^2) = 4*(6912+1296) = 4*8208 = 32832 bytes >  32768  (does not fit)
+
+ptxas register usage (flash_attn_fw_kernel, -O2, sm_75):
+  64 registers/thread, 0 spill stores/loads, 1 barrier, 432 bytes cmem[0]
+
+Occupancy cross-check (which resource actually binds occupancy?):
+  Br=Bc=32: regs/block = 64*32 = 2048  -> reg-limited blocks/SM = 65536/2048 = 32
+            smem/block = 28672 bytes   -> smem-limited blocks/SM = 65536/28672 = 2 (floor)
+            threads/block = 32         -> thread-limited blocks/SM = 1024/32 = 32
+            => shared memory is the binding constraint (2 blocks/SM), not registers or threads.
+  Br=Bc=8:  regs/block = 64*8 = 512    -> reg-limited blocks/SM = 65536/512 = 128
+            smem/block = 6400 bytes    -> smem-limited blocks/SM = 65536/6400 = 10 (floor)
+            threads/block = 8          -> thread-limited blocks/SM = 1024/8 = 128
+            => shared memory still binds (10 blocks/SM), even more so than at Br=Bc=32.

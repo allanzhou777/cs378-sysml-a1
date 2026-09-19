@@ -1,0 +1,47 @@
+=== Part 1: test_reference.py ===
+self causal=0 dtype=fp32 max_err=0.00e+00 tol=1e-04 PASS
+wrong(expect FAIL) causal=0 dtype=fp32 max_err=7.54e-01 tol=1e-04 FAIL
+self causal=1 dtype=fp32 max_err=0.00e+00 tol=1e-04 PASS
+wrong(expect FAIL) causal=1 dtype=fp32 max_err=3.05e+00 tol=1e-04 FAIL
+ALL PASS
+
+=== Part 2: grade_naive.py ===
+B=1 H=1 N=32 d=16 causal=0 dtype=fp32 max_err=1.79e-07 tol=1e-04 PASS
+B=2 H=4 N=128 d=32 causal=0 dtype=fp32 max_err=5.36e-07 tol=1e-04 PASS
+B=4 H=8 N=256 d=64 causal=0 dtype=fp32 max_err=5.96e-07 tol=1e-04 PASS
+B=1 H=8 N=512 d=64 causal=0 dtype=fp32 max_err=5.66e-07 tol=1e-04 PASS
+ALL PASS
+
+=== Part 3: grade_flash.py --causal 0 ===
+B=1 H=1 N=32 d=16 causal=0 dtype=fp32 max_err=1.79e-07 tol=1e-04 PASS
+B=2 H=4 N=128 d=32 causal=0 dtype=fp32 max_err=2.68e-07 tol=1e-04 PASS
+B=4 H=8 N=256 d=64 causal=0 dtype=fp32 max_err=2.98e-07 tol=1e-04 PASS
+B=1 H=8 N=512 d=64 causal=0 dtype=fp32 max_err=2.09e-07 tol=1e-04 PASS
+ALL PASS
+
+=== Part 3: grade_flash.py --causal 1 ===
+B=1 H=1 N=32 d=16 causal=1 dtype=fp32 max_err=2.38e-07 tol=1e-04 PASS
+B=2 H=4 N=128 d=32 causal=1 dtype=fp32 max_err=3.58e-07 tol=1e-04 PASS
+B=4 H=8 N=256 d=64 causal=1 dtype=fp32 max_err=4.77e-07 tol=1e-04 PASS
+B=1 H=8 N=512 d=64 causal=1 dtype=fp32 max_err=3.58e-07 tol=1e-04 PASS
+ALL PASS
+=== Part 2: runtime + HBM table ===
+     N   runtime_ms     HBM_MB
+   512         7.31       28.3
+  1024        23.92      107.0
+  2048        89.49      415.2
+  4096       365.25     1635.8
+
+=== Part 3: HBM traffic vs baseline ===
+     N   naive_MB   flash_MB    ratio
+   512       28.3        4.2      6.7x
+  1024      107.0        8.5     12.7x
+  2048      415.2       16.9     24.6x
+  4096     1635.8       33.8     48.4x
+--- N=16384 ---
+N= 16384 ran without Python-level crash, O[0,0,0,0]= -0.010590892
+--- N=16385 ---
+N= 16385 ran without Python-level crash, O[0,0,0,0]= 0.0
+launch_naive_attn_fw CUDA error: an illegal memory access was encountered
+--- Br=Bc=48, N=96 ---
+ran, O[0,0,0,0]= 1.0290307

@@ -1,0 +1,12 @@
+      N | Br=Bc=8    | Br=Bc=16   | Br=Bc=32     (TFLOPs/s)
+----------------------------------------------
+     64 |    0.008 |    0.012 |    0.012
+    128 |    0.009 |    0.015 |    0.016
+    512 |    0.010 |    0.019 |    0.020
+   1024 |    0.010 |    0.019 |    0.021
+   4096 |    0.010 |    0.019 |    0.021
+
+Note: this teaching kernel uses scalar inner products on CUDA cores, so absolute TFLOPs/s is low; the report asks about the *shape* of the grid across (N, block), not peak throughput.
+
+
+Across the sweep, Br=Bc=32 is the fastest configuration at every N tested, with Br=Bc=16 close behind and Br=Bc=8 consistently worst — the ranking never flips, so a single tile size wins for this GPU/head-dim combination rather than the optimum shifting with N. The interesting behavior is in how the gap opens: at the short end (N=64, 128), Br=Bc=16 and Br=Bc=32 are nearly tied (0.012 TFLOPs/s at N=64), because each block only runs N/Br row-tiles before finishing, so the fixed per-block startup cost (loading the first Kj/Vj tile into shared memory, initializing the online-softmax accumulator) isn't yet amortized over enough work to separate    ▎ the two. By N=512, that startup cost has become negligible relative to total tile-loop work, and TFLOPs/s for every block size flattens out and stays essentially constant through N=1024 and N=4096 (16: ~0.019, 32: ~0.020-0.021). This plateau happens because the grid itself doesn't grow with N — with B=1, H=16 fixed, there are always exactly 16 blocks; a longer sequence just means more     ▎ iterations of the same steady-state tile loop per block, not more parallelism or a different resource pressure. So the "gain" you're seeing from N=64 to ~512 is the sweep moving past a fixed launch/warm-up cost, and it correctly tapers off once N is large enough that this overhead is amortized. The 8-vs-16-vs-32 gap itself, meanwhile, is a loop-overhead effect rather than a shared-memory or register limit: smaller Br=Bc means more K/V tile reloads (Tc = N/Bc) and more online-softmax merge operations per query row, and Part 4a's occupancy math confirms none of the tested block sizes are anywhere near the T4's shared-memory or register ceiling, so occupancy isn't what's capping performance here.

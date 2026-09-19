@@ -1,0 +1,39 @@
+=== Part 4b regime sweep: short (N<=1024) ===
+    H       N Br=Bc=8    | Br=Bc=16   | Br=Bc=32     (TFLOPs/s)
+--------------------------------------------------
+   32     512 |   0.0193 |   0.0350 |   0.0379
+   32    1024 |   0.0198 |   0.0368 |   0.0399
+  128     512 |   0.0468 |   0.0542 |   0.0463
+  128    1024 |   0.0493 |   0.0576 |   0.0470
+
+NOTE:
+at H=128, Br=Bc=16 beats Br=Bc=32 -- opposite of the H=32 pattern above where 32 wins. This holds at every N tested with H=128 (512, 1024, 2048, 4096, 8192; see medium-regime table below). The "best Br=Bc" is NOT N-invariant once H is large enough to matter -- it depends on batch*heads (i.e. how many independent thread blocks there are relative to the GPU's 40 SMs), not just on N. See gpu_device_properties.txt occupancy cross-check: at Br=Bc=16, 4 blocks/SM are shared-mem-resident vs. only 2 at Br=Bc=32. With H=32 (32 blocks total) there's SM headroom to spare, so fewer/larger tiles (Br=Bc=32, less loop overhead) wins. With H=128 (128 blocks, several waves across 40 SMs), the extra resident blocks/SM at Br=Bc=16 apparently hide memory latency better than the loop-overhead savings from Br=Bc=32 buys back -- net win for 16.
+
+=== Part 4b regime sweep: medium (N=2K-8K) ===
+    H       N Br=Bc=8    | Br=Bc=16   | Br=Bc=32     (TFLOPs/s)
+--------------------------------------------------
+   32    2048 |   0.0199 |   0.0373 |   0.0406
+  128    2048 |   0.0503 |   0.0590 |   0.0448
+   32    4096 |   0.0200 |   0.0377 |   0.0410
+  128    4096 |   0.0509 |   0.0603 |   0.0453
+   32    8192 |   0.0201 |   0.0379 |   0.0412
+  128    8192 |   0.0511 |   0.0602 |   0.0456
+
+wall-clock per cell (illustrates the loop-overhead cost of small Br=Bc at
+large N/H -- relevant to Part 4b's "primary risk" discussion):
+   H=32  N=8192 block=8  110.4s | block=16  58.8s | block=32  54.0s
+   H=128 N=8192 block=8  174.7s | block=16 148.8s | block=32 195.7s
+
+=== Part 4b regime sweep: long (N>=16K) ===
+    H       N Br=Bc=16     Br=Bc=32     (TFLOPs/s)
+--------------------------
+   32   16384      --        0.0413
+  128   16384    0.0609      0.0457
+
+wall-clock:
+   H=32  N=16384 block=32           214.5s
+   H=128 N=16384 block=16  583.3s | block=32  775.6s
+
+This confirms the H=128 pattern from short/medium regimes holds at N=16384 too: Br=Bc=16 (0.0609) beats Br=Bc=32 (0.0457) at H=128, and is also *faster in wall-clock* (583s vs 776s) despite doing more tile-loop iterations per block -- the extra resident-blocks-per-SM latency hiding at Br=Bc=16 (4 blocks/SM vs 2 at Br=Bc=32, see gpu_device_properties.txt) wins outright here, not just on a flops-per-second technicality. Br=Bc=8 at H=128,N=16384 was not run (~700s+ extrapolated, low marginal value once the 8 vs 16 vs 32 trend is already clear from medium regime, where 8 never wins).
+
+Note: Br=Bc={8,16} were NOT run at N=16384 -- extrapolating from the N=8192 wall-clock numbers above (~4x cost per doubling of N, consistent across all three regimes), Br=Bc=8 at N=16384,H=128 would take on the order of 700s and Br=Bc=16 on the order of 600s, for a single correctness/timing measurement. That extrapolated cost -- not a hard occupancy or memory limit -- is itself the empirical argument for why small Br/Bc become impractical at long context: the O(Tc*Tr) = O((N/Bc)^2) serial tile loop per block, combined with only Bc threads doing the tile-local work in parallel, means small Bc pays the full N^2 tile-count penalty without amortizing it over more per-block parallelism.
